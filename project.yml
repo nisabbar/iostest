@@ -1,0 +1,54 @@
+name: XyPay
+
+# 备用方案：如果本机 Xcode 低于 16（打不开 objectVersion 77 的工程），
+# 安装 XcodeGen 后在 ios 目录执行：xcodegen generate
+
+options:
+  bundleIdPrefix: com.xy.demo
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+
+targets:
+  XyPay:
+    type: application
+    platform: iOS
+    sources:
+      - path: XyPay
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.xy.demo.pay
+        PRODUCT_NAME: XyPay
+        INFOPLIST_FILE: Config/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_OBJC_BRIDGING_HEADER: XyPay/Support/XyPay-Bridging-Header.h
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 1
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -ObjC
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  XyPay:
+    build:
+      targets:
+        XyPay: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

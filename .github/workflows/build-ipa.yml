@@ -1,0 +1,74 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install Alipay SDK
+        run: |
+          xcodebuild -version
+          pod --version
+          pod install
+
+      - name: Build unsigned iPhone app
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild \
+            -workspace XyPay.xcworkspace \
+            -scheme XyPay \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build 2>&1 | tee build/xcodebuild.log
+
+      - name: Package IPA for signing
+        run: |
+          set -euo pipefail
+          app_path=build/DerivedData/Build/Products/Release-iphoneos/XyPay.app
+          test -f "$app_path/XyPay"
+          test -f "$app_path/Info.plist"
+          mkdir -p build/package/Payload
+          ditto "$app_path" build/package/Payload/XyPay.app
+          cd build/package
+          /usr/bin/zip -qry XyPay-unsigned.ipa Payload
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: XyPay-unsigned-ipa
+          path: build/package/XyPay-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build log and dependency lock
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: XyPay-build-details
+          path: |
+            build/xcodebuild.log
+            Podfile.lock
+          if-no-files-found: ignore
+          retention-days: 7
