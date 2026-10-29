@@ -17,8 +17,26 @@
 
 二维码仍由原来的系统生成，iOS 不自行下单或签名：
 
+新增支持四个英文双引号包裹的值，按下面顺序生成二维码（示例中的占位内容须替换为同一笔订单的实际值）：
+
+```text
+"extern_token值""2026-10-24 12:51:05""trade_no值""sign值"
+```
+
+顺序固定为 `extern_token`、`sign_date`、`trade_no`、`sign`。值之间可以有空白，但不能省略双引号、缺少字段或添加其他字段。四个值不能为空，不能包含未编码的 `&` 或双引号。格式不完整时提示扫码失败，不调用支付。
+
+APP 会将四个值填入以下固定模板，再交给支付宝 SDK：
+
+```text
+_input_charset="UTF-8"&app_name="tb"&appenv="appid=taobao^system=null^version=5.0"&biz_type="trade"&extern_token="<extern_token>"&partner="PARTNER_TAOBAO_ORDER"&pay_user_mode="no_user"&service="mobile.securitypay.pay"&sign_date="<sign_date>"&trade_no="<trade_no>"&sign_type="DSA"&sign="<sign>"
+```
+
+四个值保留原样，签名中的 `%2B`、`%3D` 等不会额外解码或编码。签名仍由原系统提供，APP 只拼接参数。
+
+原有完整参数二维码继续支持：
+
 1. 内容含 `app_id=`、`method=alipay.trade.app.pay` 或 `service=mobile.securitypay.pay` 时，按 Android 的判断顺序直接使用。
-2. 以 `http` 开头并含 `orderStr=` 时，提取到下一个 `&` 为止，只做一次 URL 解码；外层编码里的 `+` 还原为空格。
+2. 以 `http` 开头并含 `orderStr=` 时，提取到下一个 `&` 为止，只做一次 URL 解码；外层编码里的 `+` 还原为空格。解码结果若为上述四个双引号值，则补齐固定模板。URL 中须对整个 `orderStr` 做外层编码，包括将签名原有的 `%` 编码为 `%25`。
 3. 非法百分号编码无法解码时，回退到整段扫码内容；其他内容也按 Android 原样交给 SDK。
 
 直接传入的订单串不会被额外解码、重签或重排参数，避免改变原签名。普通收款码不会自动转换成 APP 支付订单。
