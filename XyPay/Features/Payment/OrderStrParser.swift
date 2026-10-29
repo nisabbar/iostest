@@ -2,60 +2,56 @@
 //  OrderStrParser.swift
 //  XyPay
 //
-//  支持四个双引号值的简写二维码，补齐固定支付参数。
-//  完整订单串和 URL orderStr 参数保留原有处理。
+//  对齐 Android 6555f7f 的 MainActivity.parseOrderStr。
 //
 
 import Foundation
 
 enum OrderStrParser {
 
+    // Java Pattern 的 \s 默认只匹配 ASCII 空白，保持两端接受范围一致。
+    private static let fieldsPattern = try? NSRegularExpression(
+        pattern: #"^"([^"&\r\n]+)"[ \t\n\x0B\f\r]*"([^"&\r\n]+)"[ \t\n\x0B\f\r]*"([^"&\r\n]+)"[ \t\n\x0B\f\r]*"([^"&\r\n]+)"$"#
+    )
+    private static let trimCharacters = CharacterSet(charactersIn: "\u{0000}"..."\u{0020}")
+
     static func parse(_ scanned: String) -> String {
-        let text = scanned.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = scanned.trimmingCharacters(in: trimCharacters)
+        guard !text.isEmpty else { return "" }
 
-        if text.hasPrefix("\"") {
-            return expandCompactOrder(text)
-        }
-
-        // 1. 直接就是 orderStr
-        if text.contains("app_id=")
-            || text.contains("method=alipay.trade.app.pay")
-            || text.contains("service=mobile.securitypay.pay") {
-            return text
-        }
-
-        // 2. URL 里带 orderStr 参数
-        if text.hasPrefix("http"), let range = text.range(of: "orderStr=") {
+        // URL 优先；缺参数或解码失败时拒绝。
+        if text.hasPrefix("http://") || text.hasPrefix("https://") {
+            guard let range = text.range(of: "orderStr=") else { return "" }
             var value = String(text[range.upperBound...])
             if let amp = value.firstIndex(of: "&") {
                 value = String(value[..<amp])
             }
-            // Android 解码抛异常后会回退到整段扫码内容。
-            guard let decoded = urlDecode(value) else { return text }
-            let compact = decoded.trimmingCharacters(in: .whitespacesAndNewlines)
-            return compact.hasPrefix("\"") ? expandCompactOrder(compact) : decoded
+            // 与 Android 一样直接返回解码结果，不再展开或二次解析。
+            return urlDecode(value) ?? ""
         }
 
-        // 3. 兜底：原样当 orderStr
-        return text
+        if let expanded = expandCompactOrder(text) { return expanded }
+
+        if text.contains("app_id=")
+            || text.contains("method=alipay.trade.app.pay")
+            || text.contains("service=mobile.securitypay.pay")
+            || text.contains("service=\"mobile.securitypay.pay\"") {
+            return text
+        }
+
+        return ""
     }
 
     /// 格式："extern_token值""sign_date值""trade_no值""sign值"。
     /// 双引号之间可有空白；值本身保持原样，尤其不能再次解码签名。
-    private static func expandCompactOrder(_ text: String) -> String {
-        let parts = text.components(separatedBy: "\"")
-        // 四对引号拆出四个值和五段间隔，拒绝缺字段、额外字段或引号外杂项。
-        guard parts.count == 9,
-              stride(from: 0, to: parts.count, by: 2).allSatisfy({
-                  parts[$0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-              }) else {
-            return ""
-        }
-
-        let values = [parts[1], parts[3], parts[5], parts[7]]
+    private static func expandCompactOrder(_ text: String) -> String? {
+        let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = fieldsPattern?.firstMatch(in: text, range: fullRange),
+              match.range == fullRange else { return nil }
+        let source = text as NSString
+        let values = (1...4).map { source.substring(with: match.range(at: $0)) }
         guard values.allSatisfy({
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !$0.contains("&")
+            !$0.trimmingCharacters(in: trimCharacters).isEmpty
         }) else {
             return ""
         }

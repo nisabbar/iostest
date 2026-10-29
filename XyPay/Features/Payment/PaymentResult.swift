@@ -7,7 +7,9 @@
 
 import Foundation
 
-struct PaymentResult {
+struct PaymentResult: Identifiable {
+
+    let id = UUID()
 
     /// resultStatus：9000 成功 / 6001 用户取消 / 其他为失败
     let status: String
@@ -20,7 +22,7 @@ struct PaymentResult {
 
     init(dictionary: [String: Any]?) {
         let dict = dictionary ?? [:]
-        status = (dict["resultStatus"] as? String) ?? "-1"
+        status = (dict["resultStatus"] as? String) ?? "未返回"
         memo = (dict["memo"] as? String) ?? ""
         result = (dict["result"] as? String) ?? ""
         raw = dict
@@ -35,6 +37,12 @@ struct PaymentResult {
 
     var isSuccess: Bool { status == "9000" }
     var isCancelled: Bool { status == "6001" }
+
+    var failureDetails: String {
+        let explanation = memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "SDK 未提供详细说明" : memo
+        return "返回码（resultStatus）：\(status)\n返回说明（memo）：\(explanation)"
+    }
 
     /// 状态码中文含义（仅用于日志/调试）
     var statusDescription: String {

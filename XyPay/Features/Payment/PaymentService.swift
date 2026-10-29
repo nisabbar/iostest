@@ -8,12 +8,26 @@
 //
 
 import Foundation
+import Combine
 
-final class PaymentService {
+final class PaymentService: ObservableObject {
 
     static let shared = PaymentService()
 
+    @Published var failure: PaymentResult?
+
     private init() {}
+
+    /// 普通回调和冷启动备用回调共用同一套展示逻辑。
+    func present(_ result: PaymentResult) {
+        if result.isSuccess || result.isCancelled {
+            failure = nil
+            ToastCenter.shared.showLong(result.displayMessage)
+        } else {
+            ToastCenter.shared.dismissImmediately()
+            failure = result
+        }
+    }
 
     // MARK: - 发起支付
 
@@ -43,11 +57,11 @@ final class PaymentService {
             return false
         }
         // SDK 优先调用 payOrder 的原回调；App 被回收等情况下走 standbyCallback。
-        // 备用回调直接显示结果，不依赖已丢失的页面闭包。
+        // 备用回调写入共享展示状态，不依赖已丢失的页面闭包。
         AlipayBridge.handleOpenURL(url) { dictionary in
             let result = PaymentResult(dictionary: dictionary)
             NSLog("[XY_PAY] standby resultStatus=%@", result.status)
-            ToastCenter.shared.showLong(result.displayMessage)
+            self.present(result)
         }
         return true
     }

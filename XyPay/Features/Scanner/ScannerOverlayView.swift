@@ -35,18 +35,13 @@ final class ScannerOverlayView: UIView {
 
     // MARK: - 布局参数
 
-    private let scanSideRatio: CGFloat = 0.68
-    private let maxScanSide: CGFloat = 300
-
-    /// 取景框（相对自身坐标系）
+    /// 扩大视觉取景框；实际识别范围为整个相机画面。
     var scanRect: CGRect {
-        let side = min(bounds.width * scanSideRatio, min(bounds.height * 0.45, maxScanSide))
-        let available = max(bounds.height - max(safeAreaInsets.top, 20) - max(safeAreaInsets.bottom, 20), side)
-        let centerY = max(safeAreaInsets.top, 20) + available / 2
-        return CGRect(x: (bounds.width - side) / 2,
-                      y: centerY - side / 2,
-                      width: side,
-                      height: side)
+        let top = max(safeAreaInsets.top, 20) + 118
+        let bottom = max(safeAreaInsets.bottom, 20) + 96
+        return CGRect(x: 18, y: top,
+                      width: max(bounds.width - 36, 0),
+                      height: max(bounds.height - top - bottom, 0))
     }
 
     // MARK: - 生命周期
@@ -156,7 +151,7 @@ final class ScannerOverlayView: UIView {
         borderLayer.frame = bounds
         borderLayer.path = cornerPath(in: rect).cgPath
 
-        promptLabel.frame = CGRect(x: 24, y: rect.minY - 44, width: bounds.width - 48, height: 34)
+        promptLabel.frame = CGRect(x: 24, y: rect.minY - 60, width: bounds.width - 48, height: 48)
 
         let topInset = max(safeAreaInsets.top, 20)
         let bottomInset = max(safeAreaInsets.bottom, 20)

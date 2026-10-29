@@ -2,18 +2,19 @@
 
 参考 `xy_pay` Android 项目的扫码支付 Demo，最低支持 iOS 15。
 
-主要流程：点击「📷 扫码并自动支付」→ 相机扫码 → 提取 `orderStr` → 调用支付宝 SDK → 显示支付结果。
+主要流程：相机扫码或「选择相册扫码支付」→ 统一提取 `orderStr` → 调用支付宝 SDK → 显示支付结果。本次源码按 Android 提交 `6555f7f`（调整）同步。
 
 ## 与 Android 的参数对应
 
 | Android | iOS |
 | --- | --- |
 | ZXing 扫二维码 | AVFoundation 扫二维码 |
+| 选择图片后用 ZXing 识别 | 系统照片选择器 + Vision 识别 |
 | `MainActivity.parseOrderStr` | `OrderStrParser.parse` |
 | `PayTask.payV2(orderStr, true)` | `AlipaySDK.payOrder:fromScheme:callback:` |
 | `resultStatus = 9000` | 显示「✅ 支付成功」 |
 | `resultStatus = 6001` | 显示「⚠️ 用户取消支付」 |
-| 其他状态码 | 显示「❌ 支付失败: 状态码」 |
+| 其他状态码 | 弹窗显示「支付未完成」、`resultStatus` 和 `memo` |
 
 二维码仍由原来的系统生成，iOS 不自行下单或签名：
 
@@ -23,7 +24,7 @@
 "extern_token值""2026-10-24 12:51:05""trade_no值""sign值"
 ```
 
-顺序固定为 `extern_token`、`sign_date`、`trade_no`、`sign`。值之间可以有空白，但不能省略双引号、缺少字段或添加其他字段。四个值不能为空，不能包含未编码的 `&` 或双引号。格式不完整时提示扫码失败，不调用支付。
+顺序固定为 `extern_token`、`sign_date`、`trade_no`、`sign`。值之间可以有空白，但不能省略双引号、缺少字段或添加其他字段。四个值不能为空或全为空白，不能包含未编码的 `&`、双引号、回车或换行。未匹配简写或完整参数规则时提示支付二维码格式不正确，不调用支付。
 
 APP 会将四个值填入以下固定模板，再交给支付宝 SDK：
 
@@ -33,15 +34,20 @@ _input_charset="UTF-8"&app_name="tb"&appenv="appid=taobao^system=null^version=5.
 
 四个值保留原样，签名中的 `%2B`、`%3D` 等不会额外解码或编码。签名仍由原系统提供，APP 只拼接参数。
 
-原有完整参数二维码继续支持：
+解析顺序与 Android 一致：
 
-1. 内容含 `app_id=`、`method=alipay.trade.app.pay` 或 `service=mobile.securitypay.pay` 时，按 Android 的判断顺序直接使用。
-2. 以 `http` 开头并含 `orderStr=` 时，提取到下一个 `&` 为止，只做一次 URL 解码；外层编码里的 `+` 还原为空格。解码结果若为上述四个双引号值，则补齐固定模板。URL 中须对整个 `orderStr` 做外层编码，包括将签名原有的 `%` 编码为 `%25`。
-3. 非法百分号编码无法解码时，回退到整段扫码内容；其他内容也按 Android 原样交给 SDK。
+1. 以 `http://` 或 `https://` 开头时，提取 `orderStr=` 到下一个 `&` 为止，只做一次 URL 解码；外层编码里的 `+` 还原为空格。直接返回解码结果，不再展开四字段模板。缺少参数或解码失败时拒绝。URL 中须对完整 `orderStr` 做外层编码，包括将签名原有的 `%` 编码为 `%25`。
+2. 匹配上述四字段格式时，补齐固定模板。
+3. 其他内容含 `app_id=`、`method=alipay.trade.app.pay`、`service=mobile.securitypay.pay` 或 `service="mobile.securitypay.pay"` 时，直接作为完整参数使用。
+4. 其他内容拒绝，不再兜底交给 SDK。
 
 直接传入的订单串不会被额外解码、重签或重排参数，避免改变原签名。普通收款码不会自动转换成 APP 支付订单。
 
 回跳 Scheme 为 `xypay`，在 `Config/Info.plist` 和 `XyPay/Common/AppConfig.swift` 中保持一致。SDK 的普通回调和备用回调都处理支付结果。本 Demo 不添加服务端查单、本地订单管理或自定义支付超时。
+
+相机使用全画面识别并扩大取景提示框。相册识别在后台进行，图片长边限制到 2048 像素，处理照片方向、透明白底和反色二维码；识别期间禁用两个入口。两端分别使用 Vision 和 ZXing，识别效果仍需用相同图片在真机确认。
+
+成功、取消仍显示短消息；其他结果显示可确认的弹窗，缺少返回码时显示「未返回」，缺少说明时显示「SDK 未提供详细说明」。
 
 ## 没有 Mac：使用 GitHub Actions 云打包
 
@@ -120,7 +126,10 @@ open XyPay.xcworkspace
 
 - 首次授权相机、拒绝授权、取消扫码的提示。
 - 扫原系统生成的有效订单二维码，可以拉起支付宝收银台。
+- 相册选择二维码照片、截图、透明 PNG、反色二维码；取消或未识别到二维码时不拉起支付。
+- 四字段格式、完整参数、URL 参数的处理与安卓一致；无效格式显示错误。
 - 支付完成或取消后，回到 Demo 显示对应结果。
+- 支付失败时，弹窗显示返回码和 SDK 说明，包括 App 被回收后重新回跳的场景。
 - 扫码页切到后台再返回后，能够继续扫码。
 
 界面使用 iOS 原生实现，不要求与 Android 外观一致。保留手电筒、扫码提示音和触觉反馈。

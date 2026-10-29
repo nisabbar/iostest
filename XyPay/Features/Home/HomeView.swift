@@ -3,8 +3,7 @@
 //  XyPay
 //
 //  首页：对应 Android res/layout/activity_main.xml
-//  Android 只有一个居中的 Material Button（"📷 扫码并自动支付"），
-//  点击后申请相机权限 -> 扫码 -> 解析 orderStr -> 拉起支付宝 -> Toast 结果。
+//  相机扫码 / 相册识别 -> 统一解析 orderStr -> 拉起支付宝 -> 展示结果。
 //
 
 import SwiftUI
@@ -13,8 +12,17 @@ struct HomeView: View {
 
     @EnvironmentObject private var toast: ToastCenter
 
-    @State private var showScanner = false
+    @ObservedObject private var payment = PaymentService.shared
+
+    private enum Source: String, Identifiable {
+        case camera, photo
+        var id: String { rawValue }
+    }
+
+    @State private var source: Source?
     @State private var pendingOrderStr: String?
+    @State private var pendingPhoto: NSItemProvider?
+    @State private var recognizingPhoto = false
 
     var body: some View {
         ZStack {
@@ -30,7 +38,7 @@ struct HomeView: View {
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(Theme.titleText)
 
-                    Text("扫描支付宝支付二维码，自动拉起收银台")
+                    Text("扫描或选择支付宝支付二维码，自动拉起收银台")
                         .font(.system(size: 14))
                         .foregroundColor(Theme.bodyText)
                         .multilineTextAlignment(.center)
@@ -39,17 +47,37 @@ struct HomeView: View {
 
                 Spacer(minLength: 24)
 
-                scanButton
+                VStack(spacing: 16) {
+                    if recognizingPhoto {
+                        ProgressView(AppText.recognizingPhoto)
+                            .font(.system(size: 14))
+                    }
+                    photoButton
+                    scanButton
+                }
+                .disabled(recognizingPhoto)
             }
             .padding(.horizontal, 32)   // 对齐 Android padding 32dp
             .padding(.bottom, 16)
         }
         .overlay(ToastHost())
-        .fullScreenCover(isPresented: $showScanner, onDismiss: payScannedOrder) {
-            ScannerView(prompt: AppConfig.scanPrompt) { outcome in
-                handle(outcome)
+        .fullScreenCover(item: $source, onDismiss: sourceDismissed) { selectedSource in
+            switch selectedSource {
+            case .camera:
+                ScannerView(prompt: AppConfig.scanPrompt) { outcome in
+                    handle(outcome)
+                }
+                .ignoresSafeArea()
+            case .photo:
+                PhotoQRCodePicker { provider in
+                    pendingPhoto = provider
+                }
             }
-            .ignoresSafeArea()
+        }
+        .alert(item: $payment.failure) { result in
+            Alert(title: Text("支付未完成"),
+                  message: Text(result.failureDetails),
+                  dismissButton: .default(Text("确定")))
         }
     }
 
@@ -70,7 +98,7 @@ struct HomeView: View {
 
     private var scanButton: some View {
         Button {
-            showScanner = true
+            source = .camera
         } label: {
             Text(AppText.scanButton)
                 .font(.system(size: 17, weight: .semibold))
@@ -86,11 +114,26 @@ struct HomeView: View {
         .buttonStyle(PressableButtonStyle())
     }
 
+    private var photoButton: some View {
+        Button {
+            source = .photo
+        } label: {
+            Label(AppText.selectPhoto, systemImage: "photo.on.rectangle")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(Theme.primary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.primary, lineWidth: 1))
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+
     // MARK: - 扫码结果处理（对应 Android onActivityResult）
 
     private func handle(_ outcome: ScannerOutcome) {
         pendingOrderStr = nil
-        showScanner = false
+        source = nil
 
         switch outcome {
         case .cancelled:
@@ -100,22 +143,47 @@ struct HomeView: View {
             toast.showLong(message)
 
         case .scanned(let code):
-            let orderStr = OrderStrParser.parse(code)
-            guard !orderStr.isEmpty else {
-                toast.showLong(AppText.scanFailedNoOrderStr)
-                return
-            }
-            pendingOrderStr = orderStr
+            preparePayment(code)
         }
     }
 
-    /// 等扫码页关闭后再调用 SDK，避免收银台与扫码页的转场冲突。
+    /// 等选择器或扫码页关闭后再处理，避免与支付宝收银台转场冲突。
+    private func sourceDismissed() {
+        guard let provider = pendingPhoto else {
+            payScannedOrder()
+            return
+        }
+        pendingPhoto = nil
+        recognizingPhoto = true
+        toast.show(AppText.recognizingPhoto)
+        PhotoQRCodeDecoder.decode(provider) { result in
+            recognizingPhoto = false
+            switch result {
+            case .success(let code):
+                preparePayment(code)
+                payScannedOrder()
+            case .failure(let error):
+                toast.showLong(error.localizedDescription)
+            }
+        }
+    }
+
+    private func preparePayment(_ code: String) {
+        pendingOrderStr = nil
+        let orderStr = OrderStrParser.parse(code)
+        guard !orderStr.isEmpty else {
+            toast.showLong(AppText.scanFailedNoOrderStr)
+            return
+        }
+        pendingOrderStr = orderStr
+    }
+
     private func payScannedOrder() {
         guard let orderStr = pendingOrderStr else { return }
         pendingOrderStr = nil
         toast.show(AppText.scanSucceeded)
         PaymentService.shared.pay(orderStr: orderStr) { result in
-            toast.show(result.displayMessage, duration: ToastCenter.long)
+            payment.present(result)
         }
     }
 }

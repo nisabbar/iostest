@@ -4,7 +4,7 @@
 //
 //  AVFoundation 二维码扫描页。
 //  对应 Android：IntentIntegrator + zxing-android-embedded 的 CaptureActivity
-//     - setPrompt("将支付二维码放入框内")
+//     - 全画面识别，不限中央提示框
 //     - setBeepEnabled(true)
 //     - setDesiredBarcodeFormats(QR_CODE)
 //     - 竖屏
@@ -168,6 +168,7 @@ final class QRScannerViewController: UIViewController {
                 return
             }
             output.metadataObjectTypes = [.qr]
+            output.rectOfInterest = CGRect(x: 0, y: 0, width: 1, height: 1)
 
             self.session.commitConfiguration()
 
